@@ -19,7 +19,7 @@ import os
 load_dotenv()
 colorama_init()
 def run_javascript():
-    process = subprocess.call(['node', r"C:\Users\Maximilian\Documents\Scrap.tf\scrapTF\listingUser.js"])
+    process = subprocess.call(['node', r"C:\Users\Maximilian\Documents\GitHub\scrapTFtrader\listingUser.js"])
         # Read and print the output from the JavaScript program
     while True:
         output = process.stdout.readline()
@@ -28,37 +28,30 @@ def run_javascript():
         if output:
             print(f'{output.decode().strip()}')
 
-def check_amt_listings(listings, price):
-    profitableListings = []
-    count = 0
-    for listing in sorted(listings, key = lambda x: x[1]):
-        if listing[1] > float(price):
-            profitableListings.append(listing)
-            count += 1
-            if count >= 3:
-                break
+def check_amt_listings(listings, buyPrice):
+    profitableListings = {key: value for key, value in listings.items() if value > buyPrice}
     return profitableListings
 
-def write_to_csv(name,price,listings,keyPrice):
-    with open('scrapTF/listings.csv','a') as f:
-        #name, price, listings, keyPrice, bought from scrap.tf, listings status (true = buy)
-        f.write(f"{name},{price},{listings},{keyPrice},{False},{False}\n")
+def write_to_csv(name,price,profitableListings,keyPrice):
+    with open('listings.csv','a') as f:
+        #name, price, listings, keyPrice, bought from scrap.tf, listings isBot (true = buy)
+        f.write(f"{name},{price},{profitableListings},{keyPrice},{False},{False}\n")
 
 def read_from_csv():
-    with open('scrapTF/listings.csv','r') as f:
+    with open('listings.csv','r') as f:
         lines = f.readlines()
         for line in lines:
-            name,price,listings,keyPrice,bought,status = line.split(",")
-            if status == False or bought == True:
+            name,price,listings,keyPrice,scrapTF,isBot = line.split(",")
+            if isBot == False or scrapTF == True:
                 continue
-            elif status == True and bought == False:
-                return name,price,listings,keyPrice,bought,status
+            elif isBot == True and scrapTF == False:
+                return name,price,listings,keyPrice,scrapTF,isBot
         return None,None,None,None,None,None
 
 def update_csv(row):
-    with open('scrapTF/listings.csv','r') as f:
+    with open('listings.csv','r') as f:
         lines = f.readlines()
-    with open('scrapTF/listings.csv','w') as f:
+    with open('listings.csv','w') as f:
         for line in lines:
             if line == row:
                 f.write(line[0], line[1], line[2], line[3], True, line[5])
@@ -76,7 +69,6 @@ def cheapest_price(item_data,name,price):
 def clean_name(name):
     return re.sub(r'<.*?>', '', name)
 
-#Buy_item might need to be something that is ran from the listings.csv file since there needs to be some queue system
 def buy_item(driver):
     #Need to fix logic so it doesn't crash when you have clicked items that cant be bought with others.
     row = read_from_csv()
@@ -111,7 +103,7 @@ def compare(item_data, keyPrice):
     failed = profitable = 0
     for name, price in item_data.items():
         listings = request_listings(name, keyPrice)
-        time.sleep(0.7)
+        time.sleep(0.9)
 
         #Check for errors
         if listings == "sleep": #Sleep to avoid rate limit
@@ -133,12 +125,13 @@ def compare(item_data, keyPrice):
             continue
                 
         #Check if profitable
-        steamID, sellPrice = max(listings, key=lambda x: x[1])
-        if sellPrice - float(price) >= 1:
+        steamID = max(listings, key=lambda x: listings[x])
+        sellPrice = listings[steamID]
+        if sellPrice - int(price) >= 1:
             if "|" in name: #Remove | seperator if unusual
                 name = f'{Fore.MAGENTA}{name.split("|")[0]}{Style.RESET_ALL} {name.split("|")[1]}'
             profitableListings = check_amt_listings(listings, price) 
-            print(f"\033[1m{name}:\033[0m\n{Fore.RED}Buy: {int(price)}, {Fore.GREEN}Sell: {int(sellPrice)}, {Fore.YELLOW}Profit: {int(sellPrice - float(price))}{Style.RESET_ALL}\n")
+            print(f"\033[1m{name}:\033[0m\n{Fore.RED}Buy: {int(price)}, {Fore.GREEN}Sell: {int(sellPrice)}, {Fore.YELLOW}Profit: {int(sellPrice - int(price))}{Style.RESET_ALL}\n")
             write_to_csv(name,price,profitableListings,keyPrice)
             profitable += 1
 
@@ -189,6 +182,7 @@ def scrapTF():
 
     c=0
     while True:
+        #Clear items from csv that have x,x,x,x,True,True
         c+=1
 
         #Get key price on scrap.tf
@@ -213,24 +207,24 @@ def scrapTF():
 
 
         # Unusual Scrap.tf
-        unusuals_data = {}
-        driver.get("https://scrap.tf/unusuals/89")
-        elements = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'banking-category')))
-        for i in range(0,len(elements)):
-            items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-{i}"]/div/div')))
-            for item in items:
-                price = item.get_attribute('data-item-value') #Price in scrap metal
-                name = clean_name(item.get_attribute('data-title')) #Name of cosmetic
-                br = item.get_attribute('data-content').split('<br/>')
-                for i in range(len(br)):
-                    if 'Effect: ' in br[i]:
-                        effect = br[i][8:]
-                        name = effect + "|" + name
-                        break
-                unusuals_data = cheapest_price(unusuals_data,name,price)
-        print(f"\n\n{Fore.MAGENTA}§ Unusuals §{Style.RESET_ALL}")
-        profitableUnusuals, failedUnusuals = compare(unusuals_data, keyPrice)
-        print(f"{Fore.MAGENTA}Unusuals Section complete!{Style.RESET_ALL}\n- {len(unusuals_data)} LISTINGS\n- {profitableUnusuals} PROFITABLE\n- {failedUnusuals} FAILED\n\n")
+        #unusuals_data = {}
+        #driver.get("https://scrap.tf/unusuals/89")
+        #elements = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'banking-category')))
+        #for i in range(0,len(elements)):
+            #items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-{i}"]/div/div')))
+            #for item in items:
+                #price = item.get_attribute('data-item-value') #Price in scrap metal
+                #name = clean_name(item.get_attribute('data-title')) #Name of cosmetic
+                #br = item.get_attribute('data-content').split('<br/>')
+                #for i in range(len(br)):
+                    #if 'Effect: ' in br[i]:
+                        #effect = br[i][8:]
+                        #name = effect + "|" + name
+                        #break
+                #unusuals_data = cheapest_price(unusuals_data,name,price)
+        #print(f"\n\n{Fore.MAGENTA}§ Unusuals §{Style.RESET_ALL}")
+        #profitableUnusuals, failedUnusuals = compare(unusuals_data, keyPrice)
+        #print(f"{Fore.MAGENTA}Unusuals Section complete!{Style.RESET_ALL}\n- {len(unusuals_data)} LISTINGS\n- {profitableUnusuals} PROFITABLE\n- {failedUnusuals} FAILED\n\n")
 
 
         # Items Scrap.tf
@@ -262,16 +256,16 @@ def scrapTF():
         profitableStranges, failedStranges = compare(strange_data, keyPrice)
         print(f"{Fore.YELLOW}Strange Section complete!{Style.RESET_ALL}\n- {len(strange_data)} LISTINGS\n- {profitableStranges} PROFITABLE\n- {failedStranges} FAILED\n\n")
 
-
+        failedUnusuals = profitableUnusuals = 0
         failed = failedHats + failedUnusuals + failedItems + failedStranges
         profitable = profitableHats + profitableUnusuals + profitableItems + profitableStranges
         print(f"\n\n{Fore.LIGHTYELLOW_EX}Cycle {c} Complete!{Style.RESET_ALL}\n- {len(hats_data) + len(items_data) + len(strange_data)} LISTINGS\n- {profitable} PROFITABLE\n- {failed} FAILED\n\n") #+ len(unusuals_data)
 
 
 #Run javascript program
-#javascript_thread = threading.Thread(target=run_javascript)
-#javascript_thread.start()
-#time.sleep(45)
+javascript_thread = threading.Thread(target=run_javascript)
+javascript_thread.start()
+time.sleep(45)
 scrapTF() 
 
 

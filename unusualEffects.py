@@ -17,3 +17,4 @@ for row in rows[1:]:
     number = row.select_one('.text-muted').get_text(strip=True)[1:]
     name = re.sub(r'^#\d+', '', name_element).strip()
     particles[name] = number
+    
