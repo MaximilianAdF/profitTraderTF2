@@ -149,7 +149,6 @@ async function checkInventory(steamID, price, name, keyPrice) {
     const items = await fetchTF2Inventory(steamID);
     const itemCounts = {};
 
-    console.log(items[0])
     for (const item of items) {
       if (!item.hasOwnProperty('flag_cannot_craft')) {
         item.craftable = true;
@@ -172,22 +171,22 @@ async function checkInventory(steamID, price, name, keyPrice) {
       (itemCounts.hasOwnProperty(skuRef) && itemCounts[skuRef] >= amtRefined) &&
       (itemCounts.hasOwnProperty(skuKey) && itemCounts[skuKey] >= amtKeys)
     ) {
-      console.log(chalk.yellow('JS:'), chalk.green('User', chalk.italic(steamID), 'has enough pure'));
+      console.log(chalk.yellow('JS:'), chalk.green('User has enough pure'));
       const attributes = parseString(name, true, true);
       console.log(toSKU(attributes));
       if (!itemCounts.hasOwnProperty(toSKU(attributes))) { // Check if bot already has item!
-        console.log(chalk.yellow('JS:'), chalk.green('User', chalk.italic(steamID), 'does not have:', chalk.bold(name)));
+        console.log(chalk.yellow('JS:'), chalk.green('User does not have:', chalk.bold(name)));
         return true;
       } else {
-        console.log(chalk.yellow('JS:'), chalk.red('User', chalk.italic(steamID), 'already has:', chalk.bold(name)));
+        console.log(chalk.yellow('JS:'), chalk.red('User already has:', chalk.bold(name)));
         return false;
       }
     } else {
-      console.log(chalk.yellow('JS:'), chalk.red('User', chalk.italic(steamID), 'does not have enough pure'));
+      console.log(chalk.yellow('JS:'), chalk.red('User does not have enough pure'));
       return false;
     }
   } catch (error) {
-    console.error('Failed to fetch inventory for:', chalk.italic(steamID), '- Retrying in', chalk.yellow('100ms'), "-", chalk.red(error.message));
+    console.error('fetchInventory:', chalk.red(error.message), '-', 'Retrying in', chalk.yellow('100ms'));
     await new Promise((resolve) => setTimeout(resolve, 100)); // Adjust the delay as needed
     return checkInventory(steamID, price, name, keyPrice); // Recursive call to repeat the function
   }
@@ -239,7 +238,8 @@ async function processCSV(client) {
         try {
           const res = await checkBot(client, steamID);
           if (res === true && sellPrice > result['buyPrice']) {
-            console.log(chalk.yellow('JS:'), chalk.green('User is bot:', res));
+            console.log(chalk.yellow('JS:'), chalk.green('User is bot:', res,'\n'));
+            console.log(chalk.yellow('JS:'), "Checking user's inventory...");
             const hasInventory = await checkInventory(steamID, sellPrice, result['name'], result['keyPrice']);
             if (hasInventory === true) {
               console.log(chalk.yellow('JS:'), 'Pushing user to botListings...');
@@ -248,10 +248,10 @@ async function processCSV(client) {
               console.log(chalk.yellow('JS:'), 'Not pushing user to botListings...');
             }
           } else {
-            console.log(chalk.yellow('JS:'), chalk.red('User is bot:', res));
+            console.log(chalk.yellow('JS:'), chalk.red('User is bot:', res,'\n'));
           }
         } catch (error) {
-          console.log(chalk.yellow('JS:'), chalk.red('User is bot:', error));
+          console.log(chalk.yellow('JS:'), chalk.red('User is bot:', error,'\n'));
           continue
         }
 
