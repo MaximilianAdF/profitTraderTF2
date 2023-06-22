@@ -1,9 +1,8 @@
-const config = require('C:/Users/Maximilian/Documents/Scrap.tf/scrapTF/config.json');
 const { parseString } = require('tf2-item-format/static');
 const { toSKU } = require('tf2-item-format');
 const SteamUser = require('steam-user');
 const SteamTotp = require('steam-totp');
-const AsyncLock = require('async-lock');
+const config = require('/Users/maximilian/Documents/GitHub/profitTraderTF2/config.json');
 const chokidar = require('chokidar');
 const readline = require('readline');
 const SteamID = require('steamid');
@@ -173,7 +172,6 @@ async function checkInventory(steamID, price, name, keyPrice) {
     ) {
       console.log(chalk.yellow('JS:'), chalk.green('User has enough pure'));
       const attributes = parseString(name, true, true);
-      console.log(toSKU(attributes));
       if (!itemCounts.hasOwnProperty(toSKU(attributes))) { // Check if bot already has item!
         console.log(chalk.yellow('JS:'), chalk.green('User does not have:', chalk.bold(name)));
         return true;
@@ -196,9 +194,51 @@ function incomingTrade(buyPrice, name, keyPrice) {
   const brah = 1
 }
 
+function write_isBot_true(lineToModify) {
+  const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
+
+  const rl = readline.createInterface({
+    input: fs.createReadStream('listings.csv'),
+    output: fs.createWriteStream('temp.csv'),
+    terminal: false
+  });
+
+  rl.on('line', (line) => {
+    if (line === lineToModify) {
+      const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
+      const modifiedLine = `${name},${buyPrice},${listingsStr},${keyPrice},${scrapTF},True`;
+      rl.output.write(modifiedLine + '\n')
+
+    } else {
+      rl.output.write(line + '\n')
+    }
+  });
+
+  rl.on('close', () => {
+    rl.input.close();
+    rl.output.close();
+    fs.unlink('listings.csv', (unlinkErr) => {
+      if (unlinkErr) {
+        console.error('Error unlinking file:', unlinkErr);
+      } else {
+        fs.rename('temp.csv', 'listings.csv', (renameErr) => {
+          if (renameErr) {
+            console.error('Error renaming file:', renameErr);
+          } else {
+            console.log(chalk.yellow('JS:'), name, 'isBot set to true!\n');
+          }
+        });
+      }
+    });
+  });
+}
+
 async function processCSV(client) {
   const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
   const results = [];
+
+  let botListings = [];
+  let lineMod = '';
 
   const rl = readline.createInterface({
     input: fs.createReadStream('listings.csv'),
@@ -209,6 +249,7 @@ async function processCSV(client) {
   rl.on('line', (line) => {
     const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
     const listings = JSON.parse(listingsStr);
+    lineMod = line;
 
     results.push({
       name,
@@ -222,10 +263,9 @@ async function processCSV(client) {
 
   rl.on('close', async () => {
     console.log(chalk.yellow('JS:'), 'CSV file read.', chalk.bold(results.length, 'item(s) found'));
-    console.log(results);
 
     for (const result of results) {
-      if (result['scrapTF'] && result['isBot']) {
+      if (result['isBot']) {
         console.log(chalk.yellow('JS:'), 'Skipping row:', chalk.bold(result['name']));
         continue;
       }
@@ -233,7 +273,7 @@ async function processCSV(client) {
       let sortedListings = Object.entries(result['listings']).sort((a, b) => b[1] - a[1]);
       for (const [key, value] of sortedListings) {
         const [steamID, sellPrice] = [key, value];
-        const botListings = [];
+        botListings = [];
 
         try {
           const res = await checkBot(client, steamID);
@@ -254,12 +294,13 @@ async function processCSV(client) {
           console.log(chalk.yellow('JS:'), chalk.red('User is bot:', error,'\n'));
           continue
         }
-
-        if (botListings.length > 0) {
-          console.log(botListings);
-        } else {
-          return; // Return if 0 bot listings
-        }
+      }
+      if (botListings.length > 0) {
+        console.log(botListings);
+        write_isBot_true(lineMod)
+        //trade offer
+      } else {
+        return; // Return if 0 bot listings
       }
     }
   });
@@ -268,12 +309,12 @@ async function processCSV(client) {
   });
 }
 
+
 getRefreshToken((refreshToken, client) => {
   const watcher = chokidar.watch('listings.csv');
 
   watcher.on('change', (path) => {
     console.log(chalk.yellow('JS:'), 'CSV file changed. Processing...');
-    console.log(chalk.yellow('JS:'), 'Reading CSV file...\n');
     processCSV(client);
   });
 });
