@@ -29,7 +29,7 @@ def run_javascript():
             print(f'{output.decode().strip()}')
 
 def check_amt_listings(listings, buyPrice):
-    profitableListings = {key: value for key, value in listings.items() if value > buyPrice}
+    profitableListings = {key: value for key, value in listings.items() if value > int(buyPrice)}
     return profitableListings
 
 def write_to_csv(name,price,profitableListings,keyPrice):
@@ -49,14 +49,13 @@ def read_from_csv():
         return None,None,None,None,None,None
 
 def update_csv(row):
-    with open('listings.csv','r') as f:
+    with open('TradeOffers.csv','r') as f:
         lines = f.readlines()
-    with open('listings.csv','w') as f:
+    with open('TradeOffers.csv','w') as f:
         for line in lines:
             if line == row:
                 f.write(line[0], line[1], line[2], line[3], True, line[5])
-            else:
-                f.write(line)
+                break
 
 def cheapest_price(item_data,name,price):
     if name in item_data:
@@ -70,6 +69,7 @@ def clean_name(name):
     return re.sub(r'<.*?>', '', name)
 
 def buy_item(driver):
+    #Watcher for csv file needed
     #Need to fix logic so it doesn't crash when you have clicked items that cant be bought with others.
     row = read_from_csv()
     if row == (None,None,None,None,None,None):
@@ -103,12 +103,12 @@ def compare(item_data, keyPrice):
     failed = profitable = 0
     for name, price in item_data.items():
         listings = request_listings(name, keyPrice)
-        time.sleep(0.9)
+        time.sleep(1)
 
         #Check for errors
         if listings == "sleep": #Sleep to avoid rate limit
             print(f"{Fore.YELLOW}(!) {Fore.CYAN}SLEEP{Style.RESET_ALL} - {name}\n")
-            time.sleep(4)
+            time.sleep(5)
             listings = request_listings(name, keyPrice)
         if listings == "name": #Add/Remove "The " from the name
             print(f"{Fore.YELLOW}(!) {Fore.CYAN}NAME{Style.RESET_ALL} - {name}\n")

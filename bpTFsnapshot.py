@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
-#from unusualEffects import particles
+from unusualEffects import particles
 from dotenv import load_dotenv
+
 import unicodedata
 import requests
 import math
@@ -24,7 +25,7 @@ def request_listings(item, keyPrice):
     KEYWORDS = ["spectral", "spectrum", "spell", "paint", "footprints", "headless", "voices", "halloween", "legacy", "level 0", "parts", "exorcism"]
     Q_DICT = {"Strange":"11", "Vintage":"3", "Genuine":"1", "Collector's":14, "Haunted":13} 
     url = 'https://backpack.tf/api/classifieds/search/v1'
-    listings={}
+    listings={0:0}
 
 
     params = {
@@ -87,7 +88,7 @@ def request_listings(item, keyPrice):
                 scrap = (sellPrice.get('metal', 0) - ref) / REF_PER_SCRAP
                 scrap += sellPrice.get('keys', 0) * keyPrice
                 scrap += ref * SCRAP_PER_REF
-                listings[l["steamid"].replace("'",'"')] = int(scrap)
+                listings[l["steamid"]] = int(scrap)
             return listings
         else:
             return "sleep" #Pause the program / prevent rate limiting

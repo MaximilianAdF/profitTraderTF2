@@ -2,7 +2,7 @@ const { parseString } = require('tf2-item-format/static');
 const { toSKU } = require('tf2-item-format');
 const SteamUser = require('steam-user');
 const SteamTotp = require('steam-totp');
-const config = require('/Users/maximilian/Documents/GitHub/profitTraderTF2/config.json');
+const config = require('C:/Users/Maximilian/Documents/GitHub/scrapTFtrader/config.json');
 const chokidar = require('chokidar');
 const readline = require('readline');
 const SteamID = require('steamid');
@@ -10,8 +10,8 @@ const chalk = require('chalk');
 const axios = require('axios');
 const fs = require('fs');
 
-
 //Need to check if the bot has enough metal/keys to buy item & also check that it doesn't have the item already!
+
 
 async function fetchTF2Inventory(steamID) {
   const steamIdInstance = new SteamID(steamID.toString());
@@ -51,7 +51,7 @@ function getRefreshToken(callback) {
 
   client.logOn(logOnOptions);
   client.on('loggedOn', () => {
-    console.log(chalk.yellow('JS:'),'Logged into Steam as:', chalk.italic(config.STEAM_USERNAME), '\n');
+    console.log(chalk.yellow('JS:'),'Logged into Steam as:', chalk.italic(config.STEAM_USERNAME));
     client.setPersona(SteamUser.EPersonaState.Online);
     client.gamesPlayed(["Making Profit", 440]);
   });
@@ -65,21 +65,32 @@ function getRefreshToken(callback) {
 async function checkResponseTime(client, steamID) {
   return new Promise((resolve, reject) => {
     client.chat.sendFriendMessage(steamID, '!sell');
-    console.log(chalk.yellow('JS:'),'Trigger message sent to user! Awaiting response...');
+    console.log(chalk.yellow('JS:'),'Trigger message sent to user!');
     const startTime = Date.now();
+    let resolved = false;
+
     const timer = setTimeout(() => {
-      console.log(chalk.yellow('JS:'),'User did not respond in time!');
-      reject(false);
+      if (!resolved) {
+        console.log(chalk.yellow('JS:'), 'User did not respond in time!');
+        reject(false);
+      }
     }, 3000);
 
-    client.on(`friendMessage#${steamID}`, (steamIDreceive, message) => {
+    function handleFriendMessage(steamIDreceive, message) {
       const deltaTime = Date.now() - startTime;
-      console.log(chalk.yellow('JS:'),'Response Time:', deltaTime, 'ms!');
+      console.log(chalk.yellow('JS:'), 'Response Time:', deltaTime, 'ms!');
       clearTimeout(timer);
+      resolved = true;
       resolve(true);
-    });
+    }
+
+    client.on(`friendMessage#${steamID}`, handleFriendMessage);
+    setTimeout(() => {
+      client.removeListener(`friendMessage#${steamID}`, handleFriendMessage);
+    }, 3000);
   });
 }
+
 
 function checkBot(client, steamID) {
   return new Promise((resolve, reject) => {
@@ -87,18 +98,15 @@ function checkBot(client, steamID) {
 
     // Add user to friend list:
     client.addFriend(steamID, async (err, addedPersonaName) => {
-      console.log('\n' + chalk.green(chalk.underline(steamID)));
       if (err && err.eresult === 25) {
         console.log(chalk.yellow('JS:'), 'Friendlist is full.');
       }
       if (err && err.eresult === SteamUser.EResult.DuplicateName) {
         console.log(chalk.yellow('JS:'), 'User is already a friend! testing if online...');
-        try {
-          await checkResponseTime(client, steamID);
-          resolve(true);
-        } catch (error) {
-          reject(false);
-        }
+        checkResponseTime(client, steamID)
+          .then(resolve)
+          .catch(reject);
+
       } else if (err) {
         console.log(chalk.yellow('JS:'), 'Error adding friend:', chalk.red(err.message));
         reject(false);
@@ -161,8 +169,8 @@ async function checkInventory(steamID, price, name, keyPrice) {
       //Dictionary of items
       itemCounts[sku] = (itemCounts[sku] || 0) + 1;
     }
-    console.log('\n'+chalk.yellow('JS:'),"Needed Pure:", amtKeys, amtRefined, amtReclaimed, amtScraps)
-    console.log(chalk.yellow('JS:'),"User's Pure:", itemCounts[skuKey], itemCounts[skuRef], itemCounts[skuRec], itemCounts[skuScrap],'\n')
+    //console.log('\n'+chalk.yellow('JS:'),"Needed Pure:", amtKeys, amtRefined, amtReclaimed, amtScraps)
+    //console.log(chalk.yellow('JS:'),"User's Pure:", itemCounts[skuKey], itemCounts[skuRef], itemCounts[skuRec], itemCounts[skuScrap],'\n')
 
     if (
       (itemCounts.hasOwnProperty(skuScrap) && itemCounts[skuScrap] >= amtScraps) &&
@@ -170,21 +178,21 @@ async function checkInventory(steamID, price, name, keyPrice) {
       (itemCounts.hasOwnProperty(skuRef) && itemCounts[skuRef] >= amtRefined) &&
       (itemCounts.hasOwnProperty(skuKey) && itemCounts[skuKey] >= amtKeys)
     ) {
-      console.log(chalk.yellow('JS:'), chalk.green('User has enough pure'));
+      console.log(chalk.yellow('JS:'), chalk.green('User has enough pure!'));
       const attributes = parseString(name, true, true);
       if (!itemCounts.hasOwnProperty(toSKU(attributes))) { // Check if bot already has item!
-        console.log(chalk.yellow('JS:'), chalk.green('User does not have:', chalk.bold(name)));
+        console.log(chalk.yellow('JS:'), chalk.green('User does not have item!'));
         return true;
       } else {
-        console.log(chalk.yellow('JS:'), chalk.red('User already has:', chalk.bold(name)));
+        console.log(chalk.yellow('JS:'), chalk.red('User already has item!'));
         return false;
       }
     } else {
-      console.log(chalk.yellow('JS:'), chalk.red('User does not have enough pure'));
+      console.log(chalk.yellow('JS:'), chalk.red('User does not have enough pure!'));
       return false;
     }
   } catch (error) {
-    console.error('fetchInventory:', chalk.red(error.message), '-', 'Retrying in', chalk.yellow('100ms'));
+    //console.error('fetchInventory:', chalk.red(error.message), '-', 'Retrying in', chalk.yellow('100ms'));
     await new Promise((resolve) => setTimeout(resolve, 100)); // Adjust the delay as needed
     return checkInventory(steamID, price, name, keyPrice); // Recursive call to repeat the function
   }
@@ -194,127 +202,186 @@ function incomingTrade(buyPrice, name, keyPrice) {
   const brah = 1
 }
 
-function write_isBot_true(lineToModify) {
-  const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
+async function update_csv(lineToModify, action) {
+  return new Promise((resolve, reject) => {
+    const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
+    let displayName = '';
 
-  const rl = readline.createInterface({
-    input: fs.createReadStream('listings.csv'),
-    output: fs.createWriteStream('temp.csv'),
-    terminal: false
-  });
+    const rl = readline.createInterface({
+      input: fs.createReadStream('listings.csv'),
+      output: fs.createWriteStream('temp.csv'),
+      terminal: false
+    });
 
-  rl.on('line', (line) => {
-    if (line === lineToModify) {
-      const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
-      const modifiedLine = `${name},${buyPrice},${listingsStr},${keyPrice},${scrapTF},True`;
-      rl.output.write(modifiedLine + '\n')
+    rl.on('line', (line) => {
+      if (line === lineToModify && action === 'isBot') {
+        const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
+        const modifiedLine = `${name},${buyPrice},${listingsStr},${keyPrice},${scrapTF},True`;
 
-    } else {
-      rl.output.write(line + '\n')
-    }
-  });
+        fs.appendFile('TradeOffers.csv', modifiedLine + '\n', (err) => {
+          if (err) {
+            console.error('Error appending to TradeOffers.csv:', err);
+          }
+        console.log(chalk.yellow('JS:'), chalk.bold(name), 'added to TradeOffers.csv!\n')
+        resolve(true)
+        });
 
-  rl.on('close', () => {
-    rl.input.close();
-    rl.output.close();
-    fs.unlink('listings.csv', (unlinkErr) => {
-      if (unlinkErr) {
-        console.error('Error unlinking file:', unlinkErr);
-      } else {
-        fs.rename('temp.csv', 'listings.csv', (renameErr) => {
-          if (renameErr) {
-            console.error('Error renaming file:', renameErr);
-          } else {
-            console.log(chalk.yellow('JS:'), name, 'isBot set to true!\n');
+      } else if (line === lineToModify && action === 'del') {
+        const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
+        displayName = name;
+      } else if (action === 'del') {
+        rl.output.write(line + '\n');
+      }
+    });
+
+    if (action === 'del') {
+      rl.on('close', () => {
+        rl.input.close();
+        rl.output.close();
+        fs.unlink('listings.csv', (unlinkErr) => {
+          if (unlinkErr) {
+            console.error('Error unlinking file:', unlinkErr);
+            reject(unlinkErr);
+          } else if (action === 'del') {
+            fs.rename('temp.csv', 'listings.csv', (renameErr) => {
+              if (renameErr) {
+                console.error('Error renaming file:', renameErr);
+                reject(renameErr);
+              } else if (action === 'del') {
+                console.log(chalk.yellow('JS:'), chalk.bold(displayName), 'removed from listings.csv!\n');
+                resolve(true);
+              }
+            });
           }
         });
-      }
-    });
-  });
-}
-
-async function processCSV(client) {
-  const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
-  const results = [];
-
-  let botListings = [];
-  let lineMod = '';
-
-  const rl = readline.createInterface({
-    input: fs.createReadStream('listings.csv'),
-    output: process.stdout,
-    terminal: false
-  });
-
-  rl.on('line', (line) => {
-    const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
-    const listings = JSON.parse(listingsStr);
-    lineMod = line;
-
-    results.push({
-      name,
-      buyPrice: parseInt(buyPrice),
-      listings,
-      keyPrice: parseInt(keyPrice),
-      scrapTF: scrapTF === 'True',
-      isBot: isBot === 'True'
-    });
-  });
-
-  rl.on('close', async () => {
-    console.log(chalk.yellow('JS:'), 'CSV file read.', chalk.bold(results.length, 'item(s) found'));
-
-    for (const result of results) {
-      if (result['isBot']) {
-        console.log(chalk.yellow('JS:'), 'Skipping row:', chalk.bold(result['name']));
-        continue;
-      }
-
-      let sortedListings = Object.entries(result['listings']).sort((a, b) => b[1] - a[1]);
-      for (const [key, value] of sortedListings) {
-        const [steamID, sellPrice] = [key, value];
-        botListings = [];
-
-        try {
-          const res = await checkBot(client, steamID);
-          if (res === true && sellPrice > result['buyPrice']) {
-            console.log(chalk.yellow('JS:'), chalk.green('User is bot:', res,'\n'));
-            console.log(chalk.yellow('JS:'), "Checking user's inventory...");
-            const hasInventory = await checkInventory(steamID, sellPrice, result['name'], result['keyPrice']);
-            if (hasInventory === true) {
-              console.log(chalk.yellow('JS:'), 'Pushing user to botListings...');
-              botListings.push([steamID, sellPrice]);
-            } else {
-              console.log(chalk.yellow('JS:'), 'Not pushing user to botListings...');
-            }
-          } else {
-            console.log(chalk.yellow('JS:'), chalk.red('User is bot:', res,'\n'));
-          }
-        } catch (error) {
-          console.log(chalk.yellow('JS:'), chalk.red('User is bot:', error,'\n'));
-          continue
-        }
-      }
-      if (botListings.length > 0) {
-        console.log(botListings);
-        write_isBot_true(lineMod)
-        //trade offer
-      } else {
-        return; // Return if 0 bot listings
-      }
+      });
     }
   });
-  rl.on('error', error => {
-    console.error(chalk.yellow('JS:'), 'Error reading CSV file:', error);
+}
+
+
+
+async function processCSV(client) {
+  return new Promise((resolve, reject) => {
+
+    const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
+    const results = [];
+
+    let botListings = [];
+    let lineMod = '';
+
+    const rl = readline.createInterface({
+      input: fs.createReadStream('listings.csv'),
+      output: process.stdout,
+      terminal: false
+    });
+
+    rl.on('line', (line) => {
+      const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
+      const listings = JSON.parse(listingsStr.replace(/'/g, "\""));
+      lineMod = line;
+
+      results.push({
+        name,
+        buyPrice: parseInt(buyPrice),
+        listings,
+        keyPrice: parseInt(keyPrice),
+        scrapTF: scrapTF === 'True',
+        isBot: isBot === 'True'
+      });
+    });
+
+    rl.on('close', async () => {
+      console.log(chalk.yellow('JS:'), 'CSV file read.', chalk.bold(results.length, 'item(s) found'));
+
+      for (const result of results) {
+        if (result['isBot']) {
+          console.log(chalk.yellow('JS:'), 'Skipping row:', chalk.bold(result['name']));
+          continue;
+        }
+
+        let sortedListings = Object.entries(result['listings']).sort((a, b) => b[1] - a[1]);
+        for (const [key, value] of sortedListings) {
+          if (botListings.length === 2) {
+            console.log('\n' + chalk.yellow('JS:'), chalk.greenBright('Sufficient botListings. Continuing...'))
+            break;
+          }
+          const [steamID, sellPrice] = [key, value];
+          console.log('\n' + chalk.green(chalk.underline(steamID)));
+
+          try {
+            const res = await checkBot(client, steamID);
+            if (res === true && sellPrice > result['buyPrice']) {
+              console.log(chalk.yellow('JS:'), chalk.green('User is bot:', res,'\n'));
+              console.log(chalk.yellow('JS:'), "Checking user's inventory...");
+              const hasInventory = await checkInventory(steamID, sellPrice, result['name'], result['keyPrice']);
+              if (hasInventory === true) {
+                console.log(chalk.yellow('JS:'), 'Pushing user to botListings...');
+                botListings.push([steamID, sellPrice]);
+                //break;
+              } else {
+                console.log(chalk.yellow('JS:'), 'Not pushing user to botListings...');
+              }
+            } else {
+              console.log(chalk.yellow('JS:'), chalk.red('User is bot:', res,'\n'));
+            }
+          } catch (error) {
+            console.log(chalk.yellow('JS:'), chalk.red('User is bot:', error,'\n'));
+            continue
+          }
+        }
+        if (botListings.length > 0) {
+          await update_csv(lineMod, 'isBot')
+          resolve(true);
+        } else {
+          await update_csv(lineMod, 'del')
+          resolve('0listings'); // Return if 0 bot listings 
+        }
+      }
+      resolve('skipping');
+    });
+    rl.on('error', error => {
+      console.error(chalk.yellow('JS:'), 'Error reading CSV file:', error);
+      reject(error);
+    });
   });
 }
 
 
-getRefreshToken((refreshToken, client) => {
+getRefreshToken(async (refreshToken, client) => {
   const watcher = chokidar.watch('listings.csv');
+  let isProcessing = false;
+  const queue = [];
+  let queueCounter = 0;
 
-  watcher.on('change', (path) => {
-    console.log(chalk.yellow('JS:'), 'CSV file changed. Processing...');
-    processCSV(client);
+  async function queueManager(queue) {
+    if (!isProcessing || queue.length === 0) {
+      queueCounter++;
+      console.log(chalk.yellow('JS:'), chalk.bold(`Processing queue item: ${queueCounter}`));
+      isProcessing = true;
+      const res = await processCSV(client);
+      isProcessing = false;
+      queue.shift();
+
+      //Handle res
+
+      if (queue.length > 0) {
+        queueManager(queue);
+      } else {
+        return;
+      }
+    } else if (isProcessing) {
+      console.log(chalk.yellow('JS:'), chalk.bold(chalk.redBright('Already processing CSV file!\n')));
+      queue.push('busy');
+    }
+  }
+
+  watcher.on('change', async (path) => {
+    console.log('\n\n'+chalk.yellow('JS:'), chalk.bold('CSV file changed. Processing...'));
+    queue.push('busy');
+    queueManager(queue);
   });
+  // Trade offer csv watcher
 });
+
+
