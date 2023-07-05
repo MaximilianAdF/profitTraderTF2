@@ -2,7 +2,7 @@ const { parseString } = require('tf2-item-format/static');
 const { toSKU } = require('tf2-item-format');
 const SteamUser = require('steam-user');
 const SteamTotp = require('steam-totp');
-const config = require('C:/Users/Maximilian/Documents/GitHub/scrapTFtrader/config.json');
+const config = require('./config.json');
 const chokidar = require('chokidar');
 const readline = require('readline');
 const SteamID = require('steamid');
@@ -65,7 +65,7 @@ function getRefreshToken(callback) {
 async function checkResponseTime(client, steamID) {
   return new Promise((resolve, reject) => {
     client.chat.sendFriendMessage(steamID, '!sell');
-    console.log(chalk.yellow('JS:'),'Trigger message sent to user!');
+    console.log(chalk.yellow('JS:'), 'Trigger message sent to user!');
     const startTime = Date.now();
     let resolved = false;
 
@@ -82,15 +82,14 @@ async function checkResponseTime(client, steamID) {
       clearTimeout(timer);
       resolved = true;
       resolve(true);
+
+      // Remove the event listener after it has been triggered
+      client.removeListener(`friendMessage#${steamID}`, handleFriendMessage);
     }
 
     client.on(`friendMessage#${steamID}`, handleFriendMessage);
-    setTimeout(() => {
-      client.removeListener(`friendMessage#${steamID}`, handleFriendMessage);
-    }, 3000);
   });
 }
-
 
 function checkBot(client, steamID) {
   return new Promise((resolve, reject) => {
@@ -202,7 +201,7 @@ function incomingTrade(buyPrice, name, keyPrice) {
   const brah = 1
 }
 
-async function update_csv(lineToModify, action) {
+async function update_csv(lineToModify, botListings, action) {
   return new Promise((resolve, reject) => {
     const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
     let displayName = '';
@@ -216,7 +215,7 @@ async function update_csv(lineToModify, action) {
     rl.on('line', (line) => {
       if (line === lineToModify && action === 'isBot') {
         const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
-        const modifiedLine = `${name},${buyPrice},${listingsStr},${keyPrice},${scrapTF},True`;
+        const modifiedLine = `${name},${buyPrice},${botListings},${keyPrice},${scrapTF},True`;
 
         fs.appendFile('TradeOffers.csv', modifiedLine + '\n', (err) => {
           if (err) {
@@ -258,8 +257,6 @@ async function update_csv(lineToModify, action) {
     }
   });
 }
-
-
 
 async function processCSV(client) {
   return new Promise((resolve, reject) => {
@@ -331,10 +328,10 @@ async function processCSV(client) {
           }
         }
         if (botListings.length > 0) {
-          await update_csv(lineMod, 'isBot')
+          await update_csv(lineMod, botListings, 'isBot')
           resolve(true);
         } else {
-          await update_csv(lineMod, 'del')
+          await update_csv(lineMod, botListings, 'del')
           resolve('0listings'); // Return if 0 bot listings 
         }
       }
@@ -347,12 +344,12 @@ async function processCSV(client) {
   });
 }
 
-
 getRefreshToken(async (refreshToken, client) => {
   const watcher = chokidar.watch('listings.csv');
   let isProcessing = false;
-  const queue = [];
   let queueCounter = 0;
+  const queue = [];
+
 
   async function queueManager(queue) {
     if (!isProcessing || queue.length === 0) {

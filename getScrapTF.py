@@ -4,11 +4,15 @@ from bpTFsnapshot import REF_PER_SCRAP, SCRAP_PER_REF
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 from steam_totp import generate_twofactor_code_for_time
 from colorama import init as colorama_init
 from dotenv import load_dotenv
-from colorama import Fore
-from colorama import Style
+from colorama import Fore, Style
+from queue import Queue
+from threading import Lock
+
 import subprocess
 import threading
 import time
@@ -18,9 +22,10 @@ import os
 
 load_dotenv()
 colorama_init()
+
 def run_javascript():
-    process = subprocess.call(['node', r"C:\Users\Maximilian\Documents\GitHub\scrapTFtrader\listingUser.js"])
-        # Read and print the output from the JavaScript program
+    process = subprocess.call(['node', "./listingUser.js"])
+        
     while True:
         output = process.stdout.readline()
         if output == b'' and process.poll() is not None:
@@ -38,24 +43,50 @@ def write_to_csv(name,price,profitableListings,keyPrice):
         f.write(f"{name},{price},{profitableListings},{keyPrice},{False},{False}\n")
 
 def read_from_csv():
-    with open('listings.csv','r') as f:
-        lines = f.readlines()
-        for line in lines:
-            name,price,listings,keyPrice,scrapTF,isBot = line.split(",")
-            if isBot == False or scrapTF == True:
-                continue
-            elif isBot == True and scrapTF == False:
-                return name,price,listings,keyPrice,scrapTF,isBot
-        return None,None,None,None,None,None
-
-def update_csv(row):
     with open('TradeOffers.csv','r') as f:
         lines = f.readlines()
-    with open('TradeOffers.csv','w') as f:
         for line in lines:
-            if line == row:
-                f.write(line[0], line[1], line[2], line[3], True, line[5])
-                break
+            name,price,botListings,keyPrice,scrapTF,isBot = line.split(",")
+            if isBot == True and scrapTF == False:
+                return [name,price,botListings,keyPrice,scrapTF,isBot]
+
+def observe_csv(csv_file_path, on_change_callback):
+    class CSVFileHandler(FileSystemEventHandler):
+        def __init__(self, csv_file_path, on_change_callback):
+            super().__init__()
+            self.csv_file_path = csv_file_path
+            self.on_change_callback = on_change_callback
+            self.change_queue = Queue()
+            self.processing_lock = Lock()
+
+        def on_modified(self, event):
+            if not event.is_directory and event.src_path == self.csv_file_path:
+                self.change_queue.put(event.src_path)
+
+        def process_changes(self):
+            while not self.change_queue.empty():
+                csv_file_path = self.change_queue.get()
+                self.on_change_callback(csv_file_path)
+                self.change_queue.task_done()
+
+    def observe_csv_file(csv_file_path, on_change_callback):
+        event_handler = CSVFileHandler(csv_file_path, on_change_callback)
+        observer = Observer()
+        observer.schedule(event_handler, path='.', recursive=False)
+        observer.start()
+        try:
+            while True:
+                event_handler.process_changes()
+        except KeyboardInterrupt:
+            observer.stop()
+        observer.join()
+
+    observe_csv_file(csv_file_path, on_change_callback)
+
+def update_csv(row):
+    with open('sellListings.csv','a') as f:
+        f.write(row.replace("False","True"))
+        #Making sure to write scrapTF as true since item has been bought from scrap.tf
 
 def cheapest_price(item_data,name,price):
     if name in item_data:
@@ -72,8 +103,6 @@ def buy_item(driver):
     #Watcher for csv file needed
     #Need to fix logic so it doesn't crash when you have clicked items that cant be bought with others.
     row = read_from_csv()
-    if row == (None,None,None,None,None,None):
-        return False
     
     search = driver.find_element(By.XPATH, '//*[@id="reverse-header"]/div[1]/div[1]/div[1]/div/input')
     checkout = driver.find_element(By.XPATH, '//*[@id="trade-btn"]/i')
@@ -96,6 +125,7 @@ def buy_item(driver):
         search.clear()
         return
     except:
+        #An item is already in checkout or item does not exist.
         search.clear()
         return
 
@@ -144,8 +174,8 @@ def scrapTF():
     driver.get(url)
 
     #Start the buy item thread
-    #buyitem_thread = threading.Thread(target=buy_item, args=(driver,))
-    #buyitem_thread.start()
+    #observe = threading.Thread(target=observe_csv, args=('TradeOffers.csv',buy_item,))
+    #observe.start()
 
     # Wait for the username input field to be visible
     username_input = WebDriverWait(driver, 10).until(
@@ -165,11 +195,11 @@ def scrapTF():
     )
     submit_button.click()
 
+
     #Steam Guard input
     steam_guard_code = generate_twofactor_code_for_time(shared_secret=os.getenv("STEAM_SHARED_SECRET"))
     steam_guard_input_container = WebDriverWait(driver, 10).until(
-    EC.visibility_of_element_located((By.CSS_SELECTOR, 'div.segmentedinputs_SegmentedCharacterInput_3PDBF'))
-    )
+    EC.visibility_of_element_located((By.CSS_SELECTOR, 'div.segmentedinputs_SegmentedCharacterInput_3PDBF')))
     steam_guard_inputs = steam_guard_input_container.find_elements(By.TAG_NAME, 'input')
     for i in range(len(steam_guard_code)):
         steam_guard_inputs[i].send_keys(steam_guard_code[i])
