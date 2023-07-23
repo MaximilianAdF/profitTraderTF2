@@ -1,4 +1,6 @@
+const TradeOfferManager = require('steam-tradeoffer-manager');
 const { parseString } = require('tf2-item-format/static');
+const SteamCommunity = require('steamcommunity');
 const { toSKU } = require('tf2-item-format');
 const SteamUser = require('steam-user');
 const SteamTotp = require('steam-totp');
@@ -58,7 +60,10 @@ function getRefreshToken(callback) {
 
   client.on('loginKey', (loginKey) => {
     refreshToken = loginKey;
-    callback(refreshToken, client);
+  });
+
+  client.on('webSession', (sessionid, cookies) => {
+    callback(refreshToken, client, cookies);
   });
 }
 
@@ -72,19 +77,17 @@ async function checkResponseTime(client, steamID) {
     const timer = setTimeout(() => {
       if (!resolved) {
         console.log(chalk.yellow('JS:'), 'User did not respond in time!');
-        reject(false);
+        resolve(false);
       }
     }, 3000);
 
     function handleFriendMessage(steamIDreceive, message) {
       const deltaTime = Date.now() - startTime;
       console.log(chalk.yellow('JS:'), 'Response Time:', deltaTime, 'ms!');
+      client.removeListener(`friendMessage#${steamID}`, handleFriendMessage);
       clearTimeout(timer);
       resolved = true;
-      resolve(true);
-
-      // Remove the event listener after it has been triggered
-      client.removeListener(`friendMessage#${steamID}`, handleFriendMessage);
+      resolve(true);      
     }
 
     client.on(`friendMessage#${steamID}`, handleFriendMessage);
@@ -108,17 +111,18 @@ function checkBot(client, steamID) {
 
       } else if (err) {
         console.log(chalk.yellow('JS:'), 'Error adding friend:', chalk.red(err.message));
-        reject(false);
+        resolve(false);
       } else {
         console.log(chalk.yellow('JS:'), 'Friend request sent! Waiting for response...');
         timer = setTimeout(() => {
           console.log(chalk.yellow('JS:'), 'User did not respond in time -> Removing friend');
           client.removeFriend(steamID);
-          reject(false);
+          resolve(false);
         }, 3000);
       }
     });
 
+    
     // Check if user accepted friend request:
     client.on(`friendRelationship#${steamID}`, (steamID, relationship) => {
       if (relationship === SteamUser.EFriendRelationship.Friend) {
@@ -143,7 +147,7 @@ function scrapToPure(price, keyPrice) {
   return [amtKeys, amtRefined, amtReclaimed, amtScraps];
 }
 
-async function checkInventory(steamID, price, name, keyPrice) {
+async function checkInventory(steamID, price, name, keyPrice, retryCount) {
   const skuScrap = '5000;6';
   const skuRec = '5001;6';
   const skuRef = '5002;6';
@@ -189,16 +193,19 @@ async function checkInventory(steamID, price, name, keyPrice) {
     } else {
       console.log(chalk.yellow('JS:'), chalk.red('User does not have enough pure!'));
       return false;
-    }
+    } 
   } catch (error) {
-    //console.error('fetchInventory:', chalk.red(error.message), '-', 'Retrying in', chalk.yellow('100ms'));
-    await new Promise((resolve) => setTimeout(resolve, 100)); // Adjust the delay as needed
-    return checkInventory(steamID, price, name, keyPrice); // Recursive call to repeat the function
+    if (retryCount < 100) {
+      retryCount++;
+      console.log(retryCount)
+      //console.error('fetchInventory:', chalk.red(error.message), '-', 'Retrying in', chalk.yellow('100ms'));
+      await new Promise((resolve) => setTimeout(resolve, 100)); // Adjust the delay as needed
+      return checkInventory(steamID, price, name, keyPrice, retryCount); // Recursive call to repeat the function
+    } else {
+      console.log(chalk.yellow('JS:'),'Exceeded maximum retry limit. Skipping checkInventory.');
+      return false;
+    }
   }
-}
-
-function incomingTrade(buyPrice, name, keyPrice) {
-  const brah = 1
 }
 
 async function update_csv(lineToModify, botListings, action) {
@@ -215,13 +222,14 @@ async function update_csv(lineToModify, botListings, action) {
     rl.on('line', (line) => {
       if (line === lineToModify && action === 'isBot') {
         const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
-        const modifiedLine = `${name},${buyPrice},${botListings},${keyPrice},${scrapTF},True`;
+        const strListings = `{${Object.entries(botListings).map(([key, value]) => `'${key}': ${value}`).join(', ')}}`; //Converting object to string dict
+        const modifiedLine = `${name},${buyPrice},${strListings},${keyPrice},${scrapTF},True`;
 
-        fs.appendFile('TradeOffers.csv', modifiedLine + '\n', (err) => {
+        fs.appendFile('buyItem.csv', modifiedLine + '\n', (err) => {
           if (err) {
-            console.error('Error appending to TradeOffers.csv:', err);
+            console.error('Error appending to buyItem.csv:', err);
           }
-        console.log(chalk.yellow('JS:'), chalk.bold(name), 'added to TradeOffers.csv!\n')
+        console.log(chalk.yellow('JS:'), chalk.bold(name), 'added to buyItem.csv!')
         resolve(true)
         });
 
@@ -264,7 +272,7 @@ async function processCSV(client) {
     const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
     const results = [];
 
-    let botListings = [];
+    let botListings = {};
     let lineMod = '';
 
     const rl = readline.createInterface({
@@ -289,6 +297,11 @@ async function processCSV(client) {
     });
 
     rl.on('close', async () => {
+      if (results.length === 0) {
+        return;
+      }
+
+      console.log('\n'+chalk.yellow('JS:'), chalk.bold('listings.csv changed. Processing...'));
       console.log(chalk.yellow('JS:'), 'CSV file read.', chalk.bold(results.length, 'item(s) found'));
 
       for (const result of results) {
@@ -299,7 +312,8 @@ async function processCSV(client) {
 
         let sortedListings = Object.entries(result['listings']).sort((a, b) => b[1] - a[1]);
         for (const [key, value] of sortedListings) {
-          if (botListings.length === 2) {
+          let retryCount = 0;
+          if (Object.keys(botListings).length === 2) {
             console.log('\n' + chalk.yellow('JS:'), chalk.greenBright('Sufficient botListings. Continuing...'))
             break;
           }
@@ -311,11 +325,12 @@ async function processCSV(client) {
             if (res === true && sellPrice > result['buyPrice']) {
               console.log(chalk.yellow('JS:'), chalk.green('User is bot:', res,'\n'));
               console.log(chalk.yellow('JS:'), "Checking user's inventory...");
-              const hasInventory = await checkInventory(steamID, sellPrice, result['name'], result['keyPrice']);
+              //const hasInventory = await checkInventory(steamID, sellPrice, result['name'], result['keyPrice'], retryCount);
+              const hasInventory = true;
               if (hasInventory === true) {
                 console.log(chalk.yellow('JS:'), 'Pushing user to botListings...');
-                botListings.push([steamID, sellPrice]);
-                //break;
+                botListings[steamID.toString()] = sellPrice;
+                //break; If only want to check the first listing
               } else {
                 console.log(chalk.yellow('JS:'), 'Not pushing user to botListings...');
               }
@@ -327,9 +342,10 @@ async function processCSV(client) {
             continue
           }
         }
-        if (botListings.length > 0) {
+        if (Object.keys(botListings).length > 0) {
           await update_csv(lineMod, botListings, 'isBot')
-          resolve(true);
+          await update_csv(lineMod, botListings, 'del')
+          resolve('isBot');
         } else {
           await update_csv(lineMod, botListings, 'del')
           resolve('0listings'); // Return if 0 bot listings 
@@ -344,41 +360,227 @@ async function processCSV(client) {
   });
 }
 
-getRefreshToken(async (refreshToken, client) => {
-  const watcher = chokidar.watch('listings.csv');
-  let isProcessing = false;
-  let queueCounter = 0;
-  const queue = [];
+getRefreshToken(async (refreshToken, client, cookies) => {
+  const listingsWatcher = chokidar.watch('listings.csv');
+  let listingsProcessing = false;
+  let listingsQueue = [];
 
-
-  async function queueManager(queue) {
-    if (!isProcessing || queue.length === 0) {
-      queueCounter++;
-      console.log(chalk.yellow('JS:'), chalk.bold(`Processing queue item: ${queueCounter}`));
-      isProcessing = true;
+  async function queueManager(listingsQueue) {
+    if (!listingsProcessing) {
+      listingsProcessing = true;
       const res = await processCSV(client);
-      isProcessing = false;
-      queue.shift();
+      listingsProcessing = false;
+      listingsQueue.shift();
 
-      //Handle res
-
-      if (queue.length > 0) {
-        queueManager(queue);
+      if (listingsQueue.length > 0) {
+        queueManager(listingsQueue);
       } else {
         return;
       }
-    } else if (isProcessing) {
-      console.log(chalk.yellow('JS:'), chalk.bold(chalk.redBright('Already processing CSV file!\n')));
-      queue.push('busy');
     }
   }
 
-  watcher.on('change', async (path) => {
-    console.log('\n\n'+chalk.yellow('JS:'), chalk.bold('CSV file changed. Processing...'));
-    queue.push('busy');
-    queueManager(queue);
+  listingsWatcher.on('change', async (path) => {
+    if (listingsProcessing) {
+      console.log(chalk.yellow('JS:'), chalk.bold(chalk.redBright('Already processing CSV file!\n')));
+      listingsQueue.push('change');
+    } else {
+    listingsQueue.push('change');
+    queueManager(listingsQueue);
+    }
   });
-  // Trade offer csv watcher
+  
+  //Check all incoming trade offers and for each trade offer check if it is in the TradeOffers.csv file and if
+  //so check if the trade offer from scrapTF is good and in that case accept the trade offer and after that
+  //send a message to bot !sell name and wait for that offer to be received, accept it and then onto next trade.
+  const community = new SteamCommunity();
+  const manager = new TradeOfferManager({
+    steam: client,
+    community: community,
+    language: 'en'
+  }); 
+
+  //cookies from webSession
+  manager.setCookies(cookies);
+  community.setCookies(cookies);
+  community.startConfirmationChecker(5000, config.STEAM_IDENTITY_SECRET);
+
+  function acceptOffer(offer) {
+    offer.accept((err) => {
+      if (err) {
+        console.log(chalk.yellow('JS:'), chalk.red('Error accepting offer:', err.message))
+        acceptOffer(offer);
+      } else {
+        community.checkConfirmations();
+        console.log(chalk.yellow('JS:'), 'Offer #' + offer.id, 'accepted!');
+      }
+    });
+  }
+
+  function declineOffer(offer) {  
+    offer.decline((err) => {
+      if (err) {
+        console.log(chalk.yellow('JS:'), chalk.red('Error declining offer:', err.message));
+        declineOffer(offer);
+      } else {
+      console.log(chalk.yellow('JS:'), 'Offer #' + offer.id, 'declined!');
+      }
+    });
+  }
+
+  function sendSellMsg(steamID, itemName, recursionCount = 0) {
+    if (recursionCount >= 7) {
+      console.log(chalk.yellow('JS:'), 'Maximum recursion count reached. Stopping further recursion.');
+      return;
+    }
+  
+    setTimeout(() => {
+      client.chat.sendFriendMessage(steamID, '!sell ' + itemName);
+      console.log(chalk.yellow('JS:'), chalk.bold('!sell', itemName), 'sent to:', chalk.italic(steamID), '('+chalk.red(recursionCount)+')');
+    }, 10000);
+  
+    const friendMessageHandler = (steamID, message) => {
+      if (message.includes('❌')) {
+        sendSellMsg(steamID, itemName, recursionCount + 1);
+      } else {
+        client.chat.sendFriendMessage(steamID, '!checkout');
+        client.removeListener(`friendMessage#${steamID}`, friendMessageHandler);
+      }
+    };
+  
+    client.on(`friendMessage#${steamID}`, friendMessageHandler);
+  }
+  
+  
+  
+
+  let activeListings = {};
+  manager.on('newOffer', (offer) => {
+    console.log('\n'+chalk.yellow('JS:'), chalk.bold('New offer #' + offer.id));
+    const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
+    const results = [];
+
+    const rl = readline.createInterface({
+      input: fs.createReadStream('TradeOffers.csv'),
+      output: process.stdout,
+      terminal: false
+    });
+
+    rl.on('line', (line) => {
+      const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
+      const listings = JSON.parse(listingsStr.replace(/'/g, "\""));
+
+      results.push({
+        name,
+        buyPrice: parseInt(buyPrice),
+        listings,
+        keyPrice: parseInt(keyPrice),
+        scrapTF: scrapTF === 'True',
+        isBot: isBot.trim() === 'True'
+      });
+    });
+  
+    rl.on('close', () => {
+      let [giveCountScrap, giveCountRec, giveCountRef, giveCountKey] = [0, 0, 0, 0];
+      let [getCountScrap, getCountRec, getCountRef, getCountKey] = [0, 0, 0, 0];
+      let itemName;
+      let giving;
+    
+      for (let item of offer.itemsToGive) {
+        if (item.name === 'Scrap Metal') {
+          giveCountScrap+=1;
+        } else if (item.name === 'Reclaimed Metal') {
+          giveCountRec+=1;
+        } else if (item.name === 'Refined Metal') {
+          giveCountRef+=1;
+        } else if (item.name === 'Mann Co. Supply Crate Key') {
+          giveCountKey+=1;
+        } else {
+          giving = true;
+          itemName = item.name;
+        }
+      }
+  
+      for (let item of offer.itemsToReceive) {
+        if (item.name === 'Scrap Metal') {
+          getCountScrap+=1;
+        } else if (item.name === 'Reclaimed Metal') {
+          getCountRec+=1;
+        } else if (item.name === 'Refined Metal') {
+          getCountRef+=1;
+        } else if (item.name === 'Mann Co. Supply Crate Key') {
+          getCountKey+=1;
+        } else {
+          if (giving) {
+            //Handle the case where there might be items that aren't pure on both sides?
+          }
+          giving = false;
+          itemName = item.name;
+        }
+      }
+      
+      for (let listing of results) {
+        if ((listing.name).includes(itemName) || itemName.includes(listing.name)) {
+          const pure = Math.abs(giveCountScrap - getCountScrap + (giveCountRec - getCountRec)*3 + (giveCountRef - getCountRef)*9 + (giveCountKey - getCountKey)*listing.keyPrice);
+
+          amtKey = Math.floor(pure / listing.keyPrice);
+          amtRef = ((pure % listing.keyPrice)/9).toFixed(3).substring(0,5);
+          if (amtRef < 10) {
+            amtRef = amtRef.substring(0,4);
+          }
+        
+          if (giving) {
+            console.log(chalk.yellow('JS:'), chalk.bold('GIVING'), chalk.italic(itemName), chalk.bold('FOR'), 
+            (amtKey !== 0 ? chalk.italic(amtKey, 'keys ') : '') +
+            (amtRef !== 0 ? chalk.italic(amtRef, 'ref') : '') + '\n'
+            );
+
+            if (pure >= listing.buyPrice) {
+              console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.green('\nReceiving:', chalk.italic(pure), '\nbuyPrice:', chalk.italic(listing.buyPrice), chalk.bold('\nAccepting offer...\n')));
+              acceptOffer(offer);
+
+              console.log(chalk.yellow('JS:'), chalk.bold('Removing', itemName, 'from activeListings...'))
+              delete activeListings[itemName]
+              
+            } else {
+              console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.red('\nReceiving:', chalk.italic(pure), '\nbuyPrice', chalk.italic(listing.buyPrice), chalk.bold('\nDeclining offer...\n')));
+              declineOffer(offer);
+
+              if (itemName in activeListings) {
+                if (activeListings[itemName].length === 0) {
+                  console.log(chalk.yellow('JS:'), chalk.bold('No active SIDS for', itemName, 'found!'))
+                  console.log(chalk.yellow('JS:'), chalk.bold('Removing', itemName, 'from activeListings...'))
+                  delete activeListings[itemName]
+                } else {
+                  sendSellMsg(activeListings[itemName][0], itemName)
+                  activeListings[itemName] = activeListings[itemName].slice(1)
+                }
+              } else {
+                console.log(chalk.yellow('JS:'), chalk.bold('No active listings for', itemName, 'found!'))
+                declineOffer(offer);
+              }
+            }
+
+          } else {
+            console.log(chalk.yellow('JS:'), chalk.bold('RECEIVING'), chalk.italic(itemName), chalk.bold('FOR'), 
+            (amtKey !== 0 ? chalk.italic(amtKey, 'keys ') : '') +
+            (amtRef !== 0 ? chalk.italic(amtRef, 'ref') : '') + '\n');
+
+            if (pure <= listing.buyPrice) {
+              console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.green('\nPaying:', chalk.italic(pure),  '\nbuyPrice:', chalk.italic(listing.buyPrice), chalk.bold('\nAccepting offer...\n')));
+                  
+              acceptOffer(offer);
+              const activeSIDS = Object.keys(listing.listings);
+              activeListings[itemName] = activeSIDS.slice(1)
+              sendSellMsg(activeSIDS[0], itemName)
+  
+            } else {
+              console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.red('\nPaying:', chalk.italic(pure), '\nbuyPrice', chalk.italic(listing.buyPrice), chalk.bold('\nDeclining offer...\n')));
+              declineOffer(offer);
+            }
+          }
+        }
+      }
+    });
+  })
 });
-
-
