@@ -118,7 +118,8 @@ def clean_name(name):
     return re.sub(r'<.*?>', '', name)
 
 def buy_item(driver):
-    time.sleep(15)
+    #Fix needed to make more efficient and work as intended
+    time.sleep(30)
     driver.get('https://scrap.tf/buy/hats')
     row = read_from_buyItem()
     if row == None:

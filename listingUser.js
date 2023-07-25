@@ -374,7 +374,6 @@ getRefreshToken(async (refreshToken, client, cookies) => {
       const res = await processCSV(client);
       listingsProcessing = false;
       listingsQueue.shift();
-      console.log(listingsQueue, listingsProcessing)
       queueManager();
     }
   }
@@ -384,7 +383,6 @@ getRefreshToken(async (refreshToken, client, cookies) => {
     if (!listingsProcessing) {
       queueManager(); // Start processing if not already processing
     } else {
-      console.log(listingsQueue, listingsProcessing)
       console.log(chalk.yellow('JS:'), chalk.bold(chalk.redBright('Already processing CSV file!\n')));
     }
   });
@@ -417,7 +415,7 @@ getRefreshToken(async (refreshToken, client, cookies) => {
             resolve(true)
           }
         });
-      }, 2000);
+      }, 5000);
     })
   }
 
@@ -437,30 +435,32 @@ getRefreshToken(async (refreshToken, client, cookies) => {
 
   async function sendSellMsg(steamID, itemName, recursionCount = 0) {
     return new Promise((resolve, reject) => {
-      if (recursionCount >= 5) {
-        console.log(chalk.yellow('JS:'), 'Maximum recursion count reached for:', chalk.italic(steamID) + '\n');
+      if (recursionCount >= 10) {
+        console.log(chalk.yellow('JS:'), chalk.redBright('Maximum recursion count reached for:', chalk.italic(steamID)) + '\n');
         resolve(false);
       }
   
       setTimeout(() => {
         client.chat.sendFriendMessage(steamID, '!sell ' + itemName);
         console.log(chalk.yellow('JS:'), chalk.bold('"!sell', itemName) + '" sent to:', chalk.italic(steamID), '('+chalk.red(recursionCount+1)+')');
-      }, 30000);
+      }, 29000);
   
-      const friendMessageHandler = (steamID, message) => {
-        client.removeListener(`friendMessage#${steamID}`, friendMessageHandler);
-        if (message.includes('❌') || message.includes('fail') || message.includes('find') || message.includes('Issue')) {
-          resolve(sendSellMsg(steamID, itemName, recursionCount + 1));
-        } else {
-          console.log(message)
-          console.log(chalk.yellow('JS:'), chalk.bold('Success, bot creating offer...'))
-          client.chat.sendFriendMessage(steamID, '!checkout');
+      const friendMessageHandler = async (steamID, message) => {
+        
+        if (message.includes('[/tradeoffer]')) {
+          client.removeListener(`friendMessage#${steamID}`, friendMessageHandler);
+          console.log(chalk.yellow('JS:'), chalk.greenBright('Success, bot creating offer...'))
           resolve(true)
+        } else if(message.includes('⌛') || message.includes('⚠️')) {
+          setTimeout(() => {}, 10000);
+        } else {
+          client.removeListener(`friendMessage#${steamID}`, friendMessageHandler);
+          resolve(await sendSellMsg(steamID, itemName, recursionCount + 1));
         }
       };
       client.on(`friendMessage#${steamID}`, friendMessageHandler);
   }
-)} 
+)}; 
   
 
   let activeListings = {};
@@ -563,6 +563,12 @@ getRefreshToken(async (refreshToken, client, cookies) => {
                 } else {
                   while (await sendSellMsg(activeListings[itemName][0], itemName) === false) {
                     activeListings[itemName] = activeListings[itemName].slice(1)
+                    if (activeListings[itemName].length === 0) {
+                      console.log(chalk.yellow('JS:'), chalk.bold('No active SIDS for', itemName, 'found!'))
+                      console.log(chalk.yellow('JS:'), chalk.bold('Removing', itemName, 'from activeListings...'))
+                      delete activeListings[itemName]
+                      break
+                    }
                   }
                 }
               } else {
@@ -584,8 +590,13 @@ getRefreshToken(async (refreshToken, client, cookies) => {
               activeListings[itemName] = activeSIDS
               while (await sendSellMsg(activeListings[itemName][0], itemName) === false) {
                 activeListings[itemName] = activeListings[itemName].slice(1)
+                if (activeListings[itemName].length === 0) {
+                  console.log(chalk.yellow('JS:'), chalk.bold('No active SIDS for', itemName, 'found!'))
+                  console.log(chalk.yellow('JS:'), chalk.bold('Removing', itemName, 'from activeListings...'))
+                  delete activeListings[itemName]
+                  break
               }
-  
+              }
             } else {
               console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.red('\nPaying:', chalk.italic(pure), '\nbuyPrice', chalk.italic(listing.buyPrice), chalk.bold('\nDeclining offer...\n')));
               await declineOffer(offer);
