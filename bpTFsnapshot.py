@@ -91,6 +91,7 @@ def request_listings(item, keyPrice):
                 listings[l["steamid"]] = int(scrap)
             return listings
         else:
+            #print(f"Error: {response.status_code}")
             return "sleep" #Pause the program / prevent rate limiting
     except KeyError as e:
         print(f"KeyError: {e}")

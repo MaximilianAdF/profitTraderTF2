@@ -313,7 +313,7 @@ async function processCSV(client) {
         let sortedListings = Object.entries(result['listings']).sort((a, b) => b[1] - a[1]);
         for (const [key, value] of sortedListings) {
           let retryCount = 0;
-          if (Object.keys(botListings).length === 2) {
+          if (Object.keys(botListings).length === 3) {
             console.log('\n' + chalk.yellow('JS:'), chalk.greenBright('Sufficient botListings. Continuing...'))
             break;
           }
@@ -324,7 +324,7 @@ async function processCSV(client) {
             const res = await checkBot(client, steamID);
             if (res === true && sellPrice > result['buyPrice']) {
               console.log(chalk.yellow('JS:'), chalk.green('User is bot:', res,'\n'));
-              console.log(chalk.yellow('JS:'), "Checking user's inventory...");
+              //console.log(chalk.yellow('JS:'), "Checking user's inventory...");
               //const hasInventory = await checkInventory(steamID, sellPrice, result['name'], result['keyPrice'], retryCount);
               const hasInventory = true;
               if (hasInventory === true) {
@@ -336,6 +336,7 @@ async function processCSV(client) {
               }
             } else {
               console.log(chalk.yellow('JS:'), chalk.red('User is bot:', res,'\n'));
+              continue
             }
           } catch (error) {
             console.log(chalk.yellow('JS:'), chalk.red('User is bot:', error,'\n'));
@@ -350,6 +351,7 @@ async function processCSV(client) {
           await update_csv(lineMod, botListings, 'del')
           resolve('0listings'); // Return if 0 bot listings 
         }
+        resolve('skipping')
       }
       resolve('skipping');
     });
@@ -357,6 +359,7 @@ async function processCSV(client) {
       console.error(chalk.yellow('JS:'), 'Error reading CSV file:', error);
       reject(error);
     });
+    resolve('skipping')
   });
 }
 
@@ -365,28 +368,24 @@ getRefreshToken(async (refreshToken, client, cookies) => {
   let listingsProcessing = false;
   let listingsQueue = [];
 
-  async function queueManager(listingsQueue) {
-    if (!listingsProcessing) {
+  async function queueManager() {
+    if (!listingsProcessing && listingsQueue.length > 0) {
       listingsProcessing = true;
       const res = await processCSV(client);
       listingsProcessing = false;
       listingsQueue.shift();
-
-      if (listingsQueue.length > 0) {
-        queueManager(listingsQueue);
-      } else {
-        return;
-      }
+      console.log(listingsQueue, listingsProcessing)
+      queueManager();
     }
   }
 
   listingsWatcher.on('change', async (path) => {
-    if (listingsProcessing) {
-      console.log(chalk.yellow('JS:'), chalk.bold(chalk.redBright('Already processing CSV file!\n')));
-      listingsQueue.push('change');
-    } else {
     listingsQueue.push('change');
-    queueManager(listingsQueue);
+    if (!listingsProcessing) {
+      queueManager(); // Start processing if not already processing
+    } else {
+      console.log(listingsQueue, listingsProcessing)
+      console.log(chalk.yellow('JS:'), chalk.bold(chalk.redBright('Already processing CSV file!\n')));
     }
   });
   
@@ -405,57 +404,67 @@ getRefreshToken(async (refreshToken, client, cookies) => {
   community.setCookies(cookies);
   community.startConfirmationChecker(5000, config.STEAM_IDENTITY_SECRET);
 
-  function acceptOffer(offer) {
-    offer.accept((err) => {
-      if (err) {
-        console.log(chalk.yellow('JS:'), chalk.red('Error accepting offer:', err.message))
-        acceptOffer(offer);
-      } else {
-        community.checkConfirmations();
-        console.log(chalk.yellow('JS:'), 'Offer #' + offer.id, 'accepted!');
-      }
-    });
+  async function acceptOffer(offer) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        offer.accept((err) => {
+          if (err) {
+            console.log(chalk.yellow('JS:'), chalk.red('Error accepting offer:', err.message))
+            resolve(acceptOffer(offer));
+          } else {
+            community.checkConfirmations();
+            console.log(chalk.yellow('JS:'), 'Offer #' + offer.id, 'accepted!');
+            resolve(true)
+          }
+        });
+      }, 2000);
+    })
   }
 
-  function declineOffer(offer) {  
-    offer.decline((err) => {
-      if (err) {
-        console.log(chalk.yellow('JS:'), chalk.red('Error declining offer:', err.message));
-        declineOffer(offer);
-      } else {
-      console.log(chalk.yellow('JS:'), 'Offer #' + offer.id, 'declined!');
-      }
-    });
+  async function declineOffer(offer) {  
+    return new Promise((resolve, reject) => {
+      offer.decline((err) => {
+        if (err) {
+          console.log(chalk.yellow('JS:'), chalk.red('Error declining offer:', err.message));
+          resolve(declineOffer(offer));
+        } else {
+          console.log(chalk.yellow('JS:'), 'Offer #' + offer.id, 'declined!');
+          resolve(true)
+        }
+      });
+    })
   }
 
-  function sendSellMsg(steamID, itemName, recursionCount = 0) {
-    if (recursionCount >= 7) {
-      console.log(chalk.yellow('JS:'), 'Maximum recursion count reached. Stopping further recursion.');
-      return;
-    }
+  async function sendSellMsg(steamID, itemName, recursionCount = 0) {
+    return new Promise((resolve, reject) => {
+      if (recursionCount >= 5) {
+        console.log(chalk.yellow('JS:'), 'Maximum recursion count reached for:', chalk.italic(steamID) + '\n');
+        resolve(false);
+      }
   
-    setTimeout(() => {
-      client.chat.sendFriendMessage(steamID, '!sell ' + itemName);
-      console.log(chalk.yellow('JS:'), chalk.bold('!sell', itemName), 'sent to:', chalk.italic(steamID), '('+chalk.red(recursionCount)+')');
-    }, 10000);
+      setTimeout(() => {
+        client.chat.sendFriendMessage(steamID, '!sell ' + itemName);
+        console.log(chalk.yellow('JS:'), chalk.bold('"!sell', itemName) + '" sent to:', chalk.italic(steamID), '('+chalk.red(recursionCount+1)+')');
+      }, 30000);
   
-    const friendMessageHandler = (steamID, message) => {
-      if (message.includes('❌')) {
-        sendSellMsg(steamID, itemName, recursionCount + 1);
-      } else {
-        client.chat.sendFriendMessage(steamID, '!checkout');
+      const friendMessageHandler = (steamID, message) => {
         client.removeListener(`friendMessage#${steamID}`, friendMessageHandler);
-      }
-    };
-  
-    client.on(`friendMessage#${steamID}`, friendMessageHandler);
+        if (message.includes('❌') || message.includes('fail') || message.includes('find') || message.includes('Issue')) {
+          resolve(sendSellMsg(steamID, itemName, recursionCount + 1));
+        } else {
+          console.log(message)
+          console.log(chalk.yellow('JS:'), chalk.bold('Success, bot creating offer...'))
+          client.chat.sendFriendMessage(steamID, '!checkout');
+          resolve(true)
+        }
+      };
+      client.on(`friendMessage#${steamID}`, friendMessageHandler);
   }
-  
-  
+)} 
   
 
   let activeListings = {};
-  manager.on('newOffer', (offer) => {
+  manager.on('newOffer', async (offer) => {
     console.log('\n'+chalk.yellow('JS:'), chalk.bold('New offer #' + offer.id));
     const regex = /([^,]+),([^,]+),(.+),([^,]+),([^,]+),([^,]+)/;
     const results = [];
@@ -466,7 +475,7 @@ getRefreshToken(async (refreshToken, client, cookies) => {
       terminal: false
     });
 
-    rl.on('line', (line) => {
+    rl.on('line', async (line) => {
       const [, name, buyPrice, listingsStr, keyPrice, scrapTF, isBot] = line.match(regex);
       const listings = JSON.parse(listingsStr.replace(/'/g, "\""));
 
@@ -480,7 +489,7 @@ getRefreshToken(async (refreshToken, client, cookies) => {
       });
     });
   
-    rl.on('close', () => {
+    rl.on('close', async () => {
       let [giveCountScrap, giveCountRec, giveCountRef, giveCountKey] = [0, 0, 0, 0];
       let [getCountScrap, getCountRec, getCountRef, getCountKey] = [0, 0, 0, 0];
       let itemName;
@@ -537,14 +546,14 @@ getRefreshToken(async (refreshToken, client, cookies) => {
 
             if (pure >= listing.buyPrice) {
               console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.green('\nReceiving:', chalk.italic(pure), '\nbuyPrice:', chalk.italic(listing.buyPrice), chalk.bold('\nAccepting offer...\n')));
-              acceptOffer(offer);
+              await acceptOffer(offer);
 
-              console.log(chalk.yellow('JS:'), chalk.bold('Removing', itemName, 'from activeListings...'))
+              console.log(chalk.yellow('JS:'), 'Removing', chalk.bold(itemName), 'from activeListings...')
               delete activeListings[itemName]
               
             } else {
               console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.red('\nReceiving:', chalk.italic(pure), '\nbuyPrice', chalk.italic(listing.buyPrice), chalk.bold('\nDeclining offer...\n')));
-              declineOffer(offer);
+              await declineOffer(offer);
 
               if (itemName in activeListings) {
                 if (activeListings[itemName].length === 0) {
@@ -552,12 +561,13 @@ getRefreshToken(async (refreshToken, client, cookies) => {
                   console.log(chalk.yellow('JS:'), chalk.bold('Removing', itemName, 'from activeListings...'))
                   delete activeListings[itemName]
                 } else {
-                  sendSellMsg(activeListings[itemName][0], itemName)
-                  activeListings[itemName] = activeListings[itemName].slice(1)
+                  while (await sendSellMsg(activeListings[itemName][0], itemName) === false) {
+                    activeListings[itemName] = activeListings[itemName].slice(1)
+                  }
                 }
               } else {
                 console.log(chalk.yellow('JS:'), chalk.bold('No active listings for', itemName, 'found!'))
-                declineOffer(offer);
+                await declineOffer(offer);
               }
             }
 
@@ -569,14 +579,16 @@ getRefreshToken(async (refreshToken, client, cookies) => {
             if (pure <= listing.buyPrice) {
               console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.green('\nPaying:', chalk.italic(pure),  '\nbuyPrice:', chalk.italic(listing.buyPrice), chalk.bold('\nAccepting offer...\n')));
                   
-              acceptOffer(offer);
+              await acceptOffer(offer);
               const activeSIDS = Object.keys(listing.listings);
-              activeListings[itemName] = activeSIDS.slice(1)
-              sendSellMsg(activeSIDS[0], itemName)
+              activeListings[itemName] = activeSIDS
+              while (await sendSellMsg(activeListings[itemName][0], itemName) === false) {
+                activeListings[itemName] = activeListings[itemName].slice(1)
+              }
   
             } else {
               console.log(chalk.underline(chalk.yellow("JS:"), chalk.bold(listing.name)), chalk.red('\nPaying:', chalk.italic(pure), '\nbuyPrice', chalk.italic(listing.buyPrice), chalk.bold('\nDeclining offer...\n')));
-              declineOffer(offer);
+              await declineOffer(offer);
             }
           }
         }

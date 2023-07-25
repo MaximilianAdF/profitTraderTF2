@@ -118,6 +118,7 @@ def clean_name(name):
     return re.sub(r'<.*?>', '', name)
 
 def buy_item(driver):
+    time.sleep(15)
     driver.get('https://scrap.tf/buy/hats')
     row = read_from_buyItem()
     if row == None:
@@ -171,12 +172,12 @@ def compare(item_data, keyPrice):
     failed = profitable = 0
     for name, price in item_data.items():
         listings = request_listings(name, keyPrice)
-        time.sleep(0.2)
+        time.sleep(0.3)
 
         #Check for errors
         if listings == "sleep": #Sleep to avoid rate limit
             #print(f"{Fore.YELLOW}(!) {Fore.CYAN}SLEEP{Style.RESET_ALL} - {name}\n")
-            time.sleep(1)
+            time.sleep(2)
             listings = request_listings(name, keyPrice)
         if listings == "name": #Add/Remove "The " from the name
             print(f"{Fore.YELLOW}(!) {Fore.CYAN}NAME{Style.RESET_ALL} - {name}\n")
@@ -277,24 +278,24 @@ def scrapTF():
 
 
         # Unusual Scrap.tf
-        unusuals_data = {}
-        driver.get("https://scrap.tf/unusuals/89")
-        elements = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'banking-category')))
-        for i in range(0,len(elements)):
-            items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-{i}"]/div/div')))
-            for item in items:
-                price = item.get_attribute('data-item-value') #Price in scrap metal
-                name = clean_name(item.get_attribute('data-title')) #Name of cosmetic
-                br = item.get_attribute('data-content').split('<br/>')
-                for i in range(len(br)):
-                    if 'Effect: ' in br[i]:
-                        effect = br[i][8:]
-                        name = effect + "|" + name
-                        break
-                unusuals_data = cheapest_price(unusuals_data,name,price)
-        print(f"\n\n{Fore.MAGENTA}§ Unusuals §{Style.RESET_ALL}")
-        profitableUnusuals, failedUnusuals = compare(unusuals_data, keyPrice)
-        print(f"{Fore.MAGENTA}Unusuals Section complete!{Style.RESET_ALL}\n- {len(unusuals_data)} LISTINGS\n- {profitableUnusuals} PROFITABLE\n- {failedUnusuals} FAILED\n\n")
+        #unusuals_data = {}
+        #driver.get("https://scrap.tf/unusuals/89")
+        #elements = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'banking-category')))
+        #for i in range(0,len(elements)):
+            #items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-{i}"]/div/div')))
+            #for item in items:
+                #price = item.get_attribute('data-item-value') #Price in scrap metal
+                #name = clean_name(item.get_attribute('data-title')) #Name of cosmetic
+                #br = item.get_attribute('data-content').split('<br/>')
+                #for i in range(len(br)):
+                    #if 'Effect: ' in br[i]:
+                        #effect = br[i][8:]
+                        #name = effect + "|" + name
+                        #break
+                #unusuals_data = cheapest_price(unusuals_data,name,price)
+        #print(f"\n\n{Fore.MAGENTA}§ Unusuals §{Style.RESET_ALL}")
+        #profitableUnusuals, failedUnusuals = compare(unusuals_data, keyPrice)
+        #print(f"{Fore.MAGENTA}Unusuals Section complete!{Style.RESET_ALL}\n- {len(unusuals_data)} LISTINGS\n- {profitableUnusuals} PROFITABLE\n- {failedUnusuals} FAILED\n\n")
 
 
         # Items Scrap.tf
@@ -326,9 +327,9 @@ def scrapTF():
         profitableStranges, failedStranges = compare(strange_data, keyPrice)
         print(f"{Fore.YELLOW}Strange Section complete!{Style.RESET_ALL}\n- {len(strange_data)} LISTINGS\n- {profitableStranges} PROFITABLE\n- {failedStranges} FAILED\n\n")
 
-        failed = failedHats + failedUnusuals + failedItems + failedStranges
-        profitable = profitableHats + profitableUnusuals + profitableItems + profitableStranges
-        print(f"\n\n{Fore.LIGHTYELLOW_EX}Cycle {c} Complete!{Style.RESET_ALL}\n- {len(hats_data) + len(items_data) + len(strange_data)} LISTINGS\n- {profitable} PROFITABLE\n- {failed} FAILED\n\n") #+ len(unusuals_data)
+        #failed = failedHats + failedUnusuals + failedItems + failedStranges
+        #profitable = profitableHats + profitableUnusuals + profitableItems + profitableStranges
+        #print(f"\n\n{Fore.LIGHTYELLOW_EX}Cycle {c} Complete!{Style.RESET_ALL}\n- {len(hats_data) + len(items_data) + len(strange_data)} LISTINGS\n- {profitable} PROFITABLE\n- {failed} FAILED\n\n") #+ len(unusuals_data)
 
 
 #Run javascript program
