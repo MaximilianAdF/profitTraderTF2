@@ -25,7 +25,7 @@ def request_listings(item, keyPrice):
     KEYWORDS = ["spectral", "spectrum", "spell", "paint", "footprints", "headless", "voices", "halloween", "legacy", "level 0", "parts", "exorcism"]
     Q_DICT = {"Strange":"11", "Vintage":"3", "Genuine":"1", "Collector's":14, "Haunted":13} 
     url = 'https://backpack.tf/api/classifieds/search/v1'
-    listings={0:0}
+    listings={0:[0,0]}
 
 
     params = {
@@ -64,8 +64,8 @@ def request_listings(item, keyPrice):
         params["item"] = item
 
 
-    response = session.get(url, params=params, headers=headers)
     try:
+        response = session.get(url, params=params, headers=headers)
         if response.status_code == 200:
             data = response.json()
             if data['total'] == 0: #Check if the api returned any listings
@@ -88,12 +88,12 @@ def request_listings(item, keyPrice):
                 scrap = (sellPrice.get('metal', 0) - ref) / REF_PER_SCRAP
                 scrap += sellPrice.get('keys', 0) * keyPrice
                 scrap += ref * SCRAP_PER_REF
-                listings[l["steamid"]] = int(scrap)
+                listings[l["steamid"]] = [int(scrap), sellPrice]
             return listings
         else:
             #print(f"Error: {response.status_code}")
             return "sleep" #Pause the program / prevent rate limiting
-    except KeyError as e:
+    except (KeyError,requests.exceptions.RequestException) as e:
         print(f"KeyError: {e}")
         return None
 

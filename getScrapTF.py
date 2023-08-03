@@ -1,4 +1,4 @@
-from selenium import webdriver
+from undetected_chromedriver import Chrome, ChromeOptions
 from bpTFsnapshot import request_listings
 from bpTFsnapshot import REF_PER_SCRAP, SCRAP_PER_REF
 from selenium.webdriver.common.by import By
@@ -21,6 +21,18 @@ import re
 import os
 
 
+
+class color:
+   PURPLE = '\033[95m'
+   CYAN = '\033[96m'
+   DARKCYAN = '\033[36m'
+   BLUE = '\033[94m'
+   GREEN = '\033[92m'
+   YELLOW = '\033[93m'
+   RED = '\033[91m'
+   BOLD = '\033[1m'
+   UNDERLINE = '\033[4m'
+   END = '\033[0m'
 load_dotenv()
 colorama_init()
 
@@ -35,7 +47,7 @@ def run_javascript():
             print(f'{output.decode().strip()}')
 
 def check_amt_listings(listings, buyPrice):
-    profitableListings = {key: value for key, value in listings.items() if value > int(buyPrice)}
+    profitableListings = {key: value for key, value in listings.items() if value[0] > int(buyPrice)}
     return profitableListings
 
 def write_to_listings(name,price,profitableListings,keyPrice):
@@ -90,7 +102,7 @@ def observe_csv(csv_file_path, on_change_callback, driver):
     observe_csv_file(csv_file_path, on_change_callback)
 
 def remove_from_buyItem(row):
-    print(f'\n{Fore.CYAN}OB: {Style.RESET_ALL}{row[0]} removed from buyItem.csv!')
+    print(f'{Fore.CYAN}OB: {Style.RESET_ALL}{color.BOLD}{row[0]}{color.END} removed from buyItem.csv!')
     with open('buyItem.csv','r') as f:
         lines = f.readlines()
     with open('buyItem.csv','w', newline='') as f:
@@ -101,7 +113,7 @@ def remove_from_buyItem(row):
                 f.write(line)
 
 def add_to_tradeOffers(row):
-    print(f'{Fore.CYAN}OB: {Style.RESET_ALL}{row[0]} added to TradeOffers.csv!'+'\n')
+    print(f'{Fore.CYAN}OB: {Style.RESET_ALL}{color.BOLD}{row[0]}{color.END} added to TradeOffers.csv!'+'')
     with open('TradeOffers.csv','a') as f:
         f.write(f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},{row[5]}".replace("False","True"))
         #Making sure to write scrapTF as true since item has been bought from scrap.tf
@@ -119,8 +131,9 @@ def clean_name(name):
 
 def buy_item(driver):
     #Fix needed to make more efficient and work as intended
-    time.sleep(30)
-    driver.get('https://scrap.tf/buy/hats')
+    #Only works for hats section, find out a way to fix...
+    time.sleep(10)
+    driver.get('https://scrap.tf/buy/hats/')
     row = read_from_buyItem()
     if row == None:
         return
@@ -145,23 +158,26 @@ def buy_item(driver):
                         remove_from_buyItem(row)
                         add_to_tradeOffers(row)
                         try:
-                            #Wait 30 seconds for trade offer to appear!
+                            #Wait 45 seconds for trade offer to appear!
+                            completed = '//*[@id="generic-modal"]/div[2]/div/div'
                             tradeOffer = '//*[@id="pid-hats"]/div[2]/div/div[2]/div[2]/button[2]'
-                            print(f"{Fore.CYAN}OB: {Style.RESET_ALL}{name} bought from scrapTF\n")
+                            print(f"{Fore.CYAN}OB: {Style.RESET_ALL}{color.BOLD}{name}{color.END} bought from scrapTF\n")
                             WebDriverWait(driver,45).until(EC.visibility_of_element_located((By.XPATH, tradeOffer)))
+                            WebDriverWait(driver,60).until(EC.visibility_of_element_located((By.XPATH, completed))) #completed scrapTF trade, can move on to next item.
+                            print(f"{Fore.CYAN}------{Style.RESET_ALL}scrapTF: {color.BOLD}{name}{color.END} passed!{Fore.CYAN}------{Style.RESET_ALL}\n")
                         except TimeoutException:
                             try:
-                                #Try canceling the trade offer
+                                #Try canceling the scrapTF offer
                                 cancel = '//*[@id="pid-hats"]/div[2]/div/div[1]/div[3]/button'
                                 cancelBtn = WebDriverWait(driver,1).until(EC.visibility_of_element_located((By.XPATH, cancel)))
                                 cancelBtn.click()
-                                print(f"{Fore.CYAN}OB: {Style.RESET_ALL}{name} canceled for {price} scrap\n")
+                                print(f"{Fore.CYAN}OB: {Style.RESET_ALL}{color.BOLD}{name}{color.END} canceled for {price} scrap\n")
                             except TimeoutException:
                                 #Cancel button not found (Trade offer may have been sent)
                                 pass
                         return
 
-        print(f"{Fore.LIGHTRED_EX}(!) FAILED TO FIND ITEM{Style.RESET_ALL} - {name} for {price}\n")
+        print(f"{Fore.LIGHTRED_EX}(!) FAILED TO FIND ITEM{Style.RESET_ALL} - {name} for {price}")
         remove_from_buyItem(row)
         return
     except:
@@ -195,8 +211,8 @@ def compare(item_data, keyPrice):
             continue
                 
         #Check if profitable
-        steamID = max(listings, key=lambda x: listings[x])
-        sellPrice = listings[steamID]
+        steamID = max(listings, key=lambda x: listings[x][0])
+        sellPrice = listings[steamID][0]
         if sellPrice - int(price) >= 1:
             if "|" in name: #Remove | seperator if unusual
                 name = f'{Fore.MAGENTA}{name.split("|")[0]}{Style.RESET_ALL} {name.split("|")[1]}'
@@ -210,7 +226,7 @@ def compare(item_data, keyPrice):
 def scrapTF():
     url = 'https://scrap.tf/buy/hats'
 
-    driver = webdriver.Chrome()
+    driver = Chrome()
     driver.get(url)
 
     #Start the buy item thread
@@ -300,43 +316,43 @@ def scrapTF():
 
 
         # Items Scrap.tf
-        items_data = {}
-        driver.get('https://scrap.tf/buy/items')
-        elements = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'banking-category')))
-        for i in range(0, len(elements)):
-            items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-{i}"]/div/div')))
-            for item in items:
-                price = item.get_attribute('data-item-value')
-                name = clean_name(item.get_attribute('data-title'))
-                if "Uncraftable" in item.get_attribute('data-content'):
-                    name = "Non-Craftable " + name
-                items_data = cheapest_price(items_data,name,price)
-        print(f"\n\n{Fore.YELLOW}§ Items §{Style.RESET_ALL}")
-        profitableItems, failedItems = compare(items_data, keyPrice)
-        print(f"{Fore.YELLOW}Items Section complete!{Style.RESET_ALL}\n- {len(items_data)} LISTINGS\n- {profitableItems} PROFITABLE\n- {failedItems} FAILED\n\n")
+        #items_data = {}
+        #driver.get('https://scrap.tf/buy/items')
+        #elements = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'banking-category')))
+        #for i in range(0, len(elements)):
+            #items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-{i}"]/div/div')))
+            #for item in items:
+                #price = item.get_attribute('data-item-value')
+                #name = clean_name(item.get_attribute('data-title'))
+                #if "Uncraftable" in item.get_attribute('data-content'):
+                    #name = "Non-Craftable " + name
+                #items_data = cheapest_price(items_data,name,price)
+        #print(f"\n\n{Fore.YELLOW}§ Items §{Style.RESET_ALL}")
+        #profitableItems, failedItems = compare(items_data, keyPrice)
+        #print(f"{Fore.YELLOW}Items Section complete!{Style.RESET_ALL}\n- {len(items_data)} LISTINGS\n- {profitableItems} PROFITABLE\n- {failedItems} FAILED\n\n")
 
 
         # Strange Scrap.tf
-        strange_data = {}
-        driver.get('https://scrap.tf/buy/stranges')
-        items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-0"]/div/div')))
-        for item in items:
-            price = item.get_attribute('data-item-value')
-            name = clean_name(item.get_attribute('data-title'))
-            strange_data = cheapest_price(strange_data,name,price)
-        print(f"\n\n{Fore.LIGHTYELLOW_EX}§ Strange §{Style.RESET_ALL}")
-        profitableStranges, failedStranges = compare(strange_data, keyPrice)
-        print(f"{Fore.YELLOW}Strange Section complete!{Style.RESET_ALL}\n- {len(strange_data)} LISTINGS\n- {profitableStranges} PROFITABLE\n- {failedStranges} FAILED\n\n")
+        #strange_data = {}
+        #driver.get('https://scrap.tf/buy/stranges')
+        #items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-0"]/div/div')))
+        #for item in items:
+            #price = item.get_attribute('data-item-value')
+            #name = clean_name(item.get_attribute('data-title'))
+            #strange_data = cheapest_price(strange_data,name,price)
+        #print(f"\n\n{Fore.LIGHTYELLOW_EX}§ Strange §{Style.RESET_ALL}")
+        #profitableStranges, failedStranges = compare(strange_data, keyPrice)
+        #print(f"{Fore.YELLOW}Strange Section complete!{Style.RESET_ALL}\n- {len(strange_data)} LISTINGS\n- {profitableStranges} PROFITABLE\n- {failedStranges} FAILED\n\n")
 
         #failed = failedHats + failedUnusuals + failedItems + failedStranges
         #profitable = profitableHats + profitableUnusuals + profitableItems + profitableStranges
         #print(f"\n\n{Fore.LIGHTYELLOW_EX}Cycle {c} Complete!{Style.RESET_ALL}\n- {len(hats_data) + len(items_data) + len(strange_data)} LISTINGS\n- {profitable} PROFITABLE\n- {failed} FAILED\n\n") #+ len(unusuals_data)
-
+        print(f"\n\n{Fore.LIGHTYELLOW_EX}Cycle {c} Complete!{Style.RESET_ALL}")
 
 #Run javascript program
 javascript_thread = threading.Thread(target=run_javascript)
 javascript_thread.start()
-time.sleep(45)
+time.sleep(30)
 scrapTF() 
 
 
