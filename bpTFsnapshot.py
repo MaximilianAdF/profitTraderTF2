@@ -23,7 +23,7 @@ def bump_within_hour(unix_timestamp):
 
 def request_listings(item, keyPrice):
     KEYWORDS = ["spectral", "spectrum", "spell", "paint", "footprints", "headless", "voices", "halloween", "legacy", "level 0", "parts", "exorcism"]
-    Q_DICT = {"Strange":"11", "Vintage":"3", "Genuine":"1", "Collector's":14, "Haunted":13} 
+    Q_DICT = {"Strange":"11", "Vintage":"3", "Genuine":"1", "Collector's":"14", "Haunted":"13"} 
     url = 'https://backpack.tf/api/classifieds/search/v1'
     listings={0:[0,0]}
 
@@ -91,7 +91,7 @@ def request_listings(item, keyPrice):
                 listings[l["steamid"]] = [int(scrap), sellPrice]
             return listings
         else:
-            #print(f"Error: {response.status_code}")
+            #print(f"Error: {response.status_code}, {response.reason}")
             return "sleep" #Pause the program / prevent rate limiting
     except (KeyError,requests.exceptions.RequestException) as e:
         print(f"KeyError: {e}")

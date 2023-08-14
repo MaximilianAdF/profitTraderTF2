@@ -132,7 +132,7 @@ def clean_name(name):
 def buy_item(driver):
     #Fix needed to make more efficient and work as intended
     #Only works for hats section, find out a way to fix...
-    time.sleep(10)
+    time.sleep(1)
     driver.get('https://scrap.tf/buy/hats/')
     row = read_from_buyItem()
     if row == None:
@@ -158,12 +158,12 @@ def buy_item(driver):
                         remove_from_buyItem(row)
                         add_to_tradeOffers(row)
                         try:
-                            #Wait 45 seconds for trade offer to appear!
+                            #Wait for trade offer to appear!
                             completed = '//*[@id="generic-modal"]/div[2]/div/div'
                             tradeOffer = '//*[@id="pid-hats"]/div[2]/div/div[2]/div[2]/button[2]'
                             print(f"{Fore.CYAN}OB: {Style.RESET_ALL}{color.BOLD}{name}{color.END} bought from scrapTF\n")
-                            WebDriverWait(driver,45).until(EC.visibility_of_element_located((By.XPATH, tradeOffer)))
-                            WebDriverWait(driver,60).until(EC.visibility_of_element_located((By.XPATH, completed))) #completed scrapTF trade, can move on to next item.
+                            WebDriverWait(driver,200).until(EC.visibility_of_element_located((By.XPATH, tradeOffer)))
+                            WebDriverWait(driver,300).until(EC.visibility_of_element_located((By.XPATH, completed))) #completed scrapTF trade, can move on to next item.
                             print(f"{Fore.CYAN}------{Style.RESET_ALL}scrapTF: {color.BOLD}{name}{color.END} passed!{Fore.CYAN}------{Style.RESET_ALL}\n")
                         except TimeoutException:
                             try:
@@ -173,7 +173,7 @@ def buy_item(driver):
                                 cancelBtn.click()
                                 print(f"{Fore.CYAN}OB: {Style.RESET_ALL}{color.BOLD}{name}{color.END} canceled for {price} scrap\n")
                             except TimeoutException:
-                                #Cancel button not found (Trade offer may have been sent)
+                                print("Cancel button not found (Trade offer may have been sent)")
                                 pass
                         return
 
@@ -188,13 +188,14 @@ def buy_item(driver):
 def compare(item_data, keyPrice):
     failed = profitable = 0
     for name, price in item_data.items():
+        start = time.time()
         listings = request_listings(name, keyPrice)
-        time.sleep(0.3)
+        
 
         #Check for errors
         if listings == "sleep": #Sleep to avoid rate limit
             #print(f"{Fore.YELLOW}(!) {Fore.CYAN}SLEEP{Style.RESET_ALL} - {name}\n")
-            time.sleep(2)
+            time.sleep(5)
             listings = request_listings(name, keyPrice)
         if listings == "name": #Add/Remove "The " from the name
             print(f"{Fore.YELLOW}(!) {Fore.CYAN}NAME{Style.RESET_ALL} - {name}\n")
@@ -220,7 +221,8 @@ def compare(item_data, keyPrice):
             print(f"\n\033[1m{name}:\033[0m\n{Fore.RED}Buy: {int(price)}, {Fore.GREEN}Sell: {int(sellPrice)}, {Fore.YELLOW}Profit: {int(sellPrice - int(price))}{Style.RESET_ALL}\n")
             write_to_listings(name,price,profitableListings,keyPrice)
             profitable += 1
-
+        stop = time.time()
+        time.sleep(1-(stop-start) if 1-(stop-start) > 0 else 0)
     return profitable, failed
 
 def scrapTF():
@@ -268,7 +270,6 @@ def scrapTF():
 
     c=0
     while True:
-        #Clear items from csv that have x,x,x,x,True,True
         c+=1
 
         #Get key price on scrap.tf
@@ -286,8 +287,14 @@ def scrapTF():
         for i in range(0, len(elements)-1):
             items = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.XPATH, f'//*[@id="category-{i}"]/div/div')))
             for item in items:
+                if 'quality1' in item.get_attribute('class') and 'quality11' not in item.get_attribute('class'):
+                    #Problem with searching for genuine items in scrap.tf!
+                    continue
+                    name = "Genuine " + clean_name(item.get_attribute('data-title'))
+                    print(name)
+                else:
+                    name = clean_name(item.get_attribute('data-title'))
                 price = item.get_attribute('data-item-value')
-                name = clean_name(item.get_attribute('data-title'))
                 hats_data = cheapest_price(hats_data,name,price)
         print(f"\n\n{Fore.CYAN}§ Hats §{Style.RESET_ALL}")
         profitableHats, failedHats = compare(hats_data, keyPrice)
