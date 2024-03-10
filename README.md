@@ -43,3 +43,28 @@ We welcome contributions from the community! If you have ideas for improvements,
 This trading bot is designed for educational and informational purposes. It is crucial to adhere to Steam's terms of service and trading policies while utilizing this bot. The developers are not responsible for any misuse or violations of Steam's terms.
 
 Explore the world of TF2 trading with confidence using the Automated TF2 Trading Bot! Optimize your trades, maximize your profits, and enjoy a streamlined trading experience.
+
+## Setup
+>[!IMPORTANT]
+>Create and complete the two following files
+>Place them in the main directory
+
+`config.json`
+```json
+{
+  "STEAM_USERNAME": "YOUR USERNAME",
+  "STEAM_PASSWORD": "YOUR PASSWORD",
+  "STEAM_SHARED_SECRET": "YOUR SHARED SECRET",
+  "STEAM_API_KEY": "YOUR API KEY"
+}
+```
+
+`.env`
+```env
+STEAM_USERNAME='YOUR USERNAME'
+STEAM_PASSWORD='YOUR PASSWORD'
+STEAM_API_KEY='YOUR API KEY'
+
+BPTF_API_KEY='YOUR BACKPACK.TF API KEY'
+BPTF_TOKEN='YOUR BACKPACK.TF TOKEN'
+```
