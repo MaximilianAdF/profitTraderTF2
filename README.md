@@ -46,8 +46,8 @@ Explore the world of TF2 trading with confidence using the Automated TF2 Trading
 
 ## Setup
 >[!IMPORTANT]
->Create and complete the two following files
->Place them in the main directory
+> - Create and complete the two following files<br>
+> - Place them in the main directory
 
 `config.json`
 ```json
